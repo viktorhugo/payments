@@ -2,13 +2,23 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsNotEmpty,
   IsNumber,
   IsPositive,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 
 export class PaymentSessionDto {
+  @IsUUID()
+  @IsNotEmpty()
+  orderId: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  userId: string;
+
   @IsString()
   currency: string;
 

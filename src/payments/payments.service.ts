@@ -3,15 +3,17 @@ import { envs } from 'src/config';
 import Stripe from 'stripe';
 import { PaymentSessionDto } from './dto/payment-session.dto';
 import { Request, Response } from 'express';
+import { IStripeCheckoutSession } from 'src/Interfaces/session.interface';
+import { IStripeWebhookEvent, IPaymentIntentMetadata } from 'src/Interfaces/webhook.interface';
 
 @Injectable()
 export class PaymentsService {
-  private readonly stripe = new Stripe(envs.STRIPE_API_KEY_SECRET);
+  private readonly stripe = new Stripe(envs.stripeApiKeySecret);
 
   constructor() {}
 
   async createPaymentSession(paymentSession: PaymentSessionDto) {
-    const { currency, items } = paymentSession;
+    const { currency, items, orderId, userId } = paymentSession;
     const line_items = items.map((item) => ({
       price_data: {
         currency,
@@ -23,32 +25,33 @@ export class PaymentsService {
       quantity: item.quantity,
     }));
 
-    const session = await this.stripe.checkout.sessions.create({
-      // Id de Orden Y Id de Usuario
-      payment_intent_data: {
-        metadata: {
-          orderId: 'test-order-id',
-          userId: 'test-user-id',
+    const session: IStripeCheckoutSession =
+      await this.stripe.checkout.sessions.create({
+        // Id de Orden Y Id de Usuario
+        payment_intent_data: {
+          metadata: {
+            orderId: orderId,
+            userId: userId,
+          },
         },
-      },
-      success_url: 'http://localhost:4400/payments/success',
-      cancel_url: 'http://localhost:4400/payments/cancel',
-      payment_method_types: ['card'],
-      mode: 'payment',
-      line_items,
-    });
+        success_url: envs.stripeSuccessUrl,
+        cancel_url: envs.stripeCancelUrl,
+        payment_method_types: ['card'],
+        mode: 'payment',
+        line_items,
+      });
     return session;
   }
 
   stripeWebhookHandler(req: Request, res: Response) {
-    const sig = req.headers['stripe-signature'];
-
-    let event;
-    const endpointSecret = envs.STRIPE_ENDPOINT_SECRET;
+    const sig: string | string[] | undefined = req.headers['stripe-signature'];
+    const endpointSecret = envs.stripeWebhookSigningSecret;
 
     if (!sig) {
       return res.status(400).send('Webhook Error: No signature found');
     }
+
+    let event: IStripeWebhookEvent;
 
     try {
       event = this.stripe.webhooks.constructEvent(
@@ -56,30 +59,35 @@ export class PaymentsService {
         sig,
         endpointSecret,
       );
-    } catch (err: any) {
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      console.log('Webhook received:', event);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      return res.status(400).send(`Webhook Error: ${errorMessage}`);
     }
-    if (!event && !event.type) {
-      return res.status(400).send('Webhook Error: No event found');
-    }
+
     // Handle the event
     switch (event.type) {
-      case 'payment_intent.succeeded':
+      case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object;
+        const metadata = paymentIntent.metadata as IPaymentIntentMetadata;
         console.log('PaymentIntent was successful!');
+        console.log('Metadata:', metadata);
+        console.log('Order ID:', metadata.orderId);
+        console.log('User ID:', metadata.userId);
         break;
-      case 'payment_method.attached':
+      }
+      case 'payment_method.attached': {
         const paymentMethod = event.data.object;
         console.log('PaymentMethod was attached to a Customer!');
+        console.log('Payment Method ID:', paymentMethod.id);
         break;
+      }
       // ... handle other event types
       default:
-        console.log(`Unhandled event type ${event.type}`);
+        console.error(`Unhandled event type ${event.type}`);
     }
 
-    console.log('Webhook received:', event);
-
     // Return a 200 response to acknowledge receipt of the event
-    return res.json({received: true});
+    return res.json({ received: true });
   }
 }
