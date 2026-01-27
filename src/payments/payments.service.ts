@@ -4,7 +4,10 @@ import Stripe from 'stripe';
 import { PaymentSessionDto } from './dto/payment-session.dto';
 import { Request, Response } from 'express';
 import { IStripeCheckoutSession } from 'src/Interfaces/session.interface';
-import { IStripeWebhookEvent, IPaymentIntentMetadata } from 'src/Interfaces/webhook.interface';
+import {
+  IStripeWebhookEvent,
+  IPaymentIntentMetadata,
+} from 'src/Interfaces/webhook.interface';
 
 @Injectable()
 export class PaymentsService {

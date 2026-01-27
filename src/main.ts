@@ -9,12 +9,17 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });
-  app.connectMicroservice<MicroserviceOptions>({
-    transport: Transport.NATS,
-    options: {
-      servers: envs.natsServers,
+  app.connectMicroservice<MicroserviceOptions>(
+    {
+      transport: Transport.NATS,
+      options: {
+        servers: envs.natsServers,
+      },
     },
-  });
+    {
+      inheritAppConfig: true,
+    },
+  );
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
