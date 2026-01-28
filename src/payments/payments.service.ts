@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { envs } from 'src/config';
+import { Inject, Injectable } from '@nestjs/common';
+import { envs, NATS_SERVICE } from 'src/config';
 import Stripe from 'stripe';
 import { PaymentSessionDto } from './dto/payment-session.dto';
 import { Request, Response } from 'express';
@@ -8,12 +8,17 @@ import {
   IStripeWebhookEvent,
   IPaymentIntentMetadata,
 } from 'src/Interfaces/webhook.interface';
+import { ClientProxy } from '@nestjs/microservices';
+import { WebhookMessage } from './enums/payment.enum';
 
 @Injectable()
 export class PaymentsService {
   private readonly stripe = new Stripe(envs.stripeApiKeySecret);
 
-  constructor() {}
+  constructor(
+    @Inject(NATS_SERVICE)
+    private readonly natsClient: ClientProxy,
+  ) {}
 
   async createPaymentSession(paymentSession: PaymentSessionDto) {
     const { currency, items, orderId, userId } = paymentSession;
@@ -71,12 +76,21 @@ export class PaymentsService {
     // Handle the event
     switch (event.type) {
       case 'payment_intent.succeeded': {
-        const paymentIntent = event.data.object;
-        const metadata = paymentIntent.metadata as IPaymentIntentMetadata;
-        console.log('PaymentIntent was successful!');
-        console.log('Metadata:', metadata);
-        console.log('Order ID:', metadata.orderId);
-        console.log('User ID:', metadata.userId);
+        const paymentData = event.data.object;
+        const metadata = paymentData.metadata as IPaymentIntentMetadata;
+        const paymentId = paymentData.id;
+        const { orderId, userId } = metadata;
+        const dataToSend = {
+          paymentId,
+          orderId,
+          userId,
+          paymentData,
+        };
+        // send event payment receive
+        this.natsClient.emit(
+          { cmd: WebhookMessage.WEBHOOK_CONFIRMATION_PAYMENT },
+          dataToSend,
+        );
         break;
       }
       case 'payment_method.attached': {
