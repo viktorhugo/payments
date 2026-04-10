@@ -1,0 +1,48 @@
+# Dependencies
+FROM node:24-alpine AS deps
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+COPY pnpm-lock.yaml ./
+RUN pnpm install
+
+
+# Builder
+FROM node:24-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /usr/src/app
+
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+
+COPY . .
+
+# RUN pnpm run lint
+# RUN pnpm run test
+
+RUN pnpm run build && pnpm install --frozen-lockfile --prod && pnpm store prune
+
+
+
+# Create final image
+FROM node:24-alpine AS production
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /usr/src/app
+
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+
+COPY --from=builder /usr/src/app/dist ./dist
+
+ENV NODE_ENV=production
+
+USER node
+
+EXPOSE 3000
+
+CMD [ "node", "dist/main.js" ]
